@@ -1,20 +1,26 @@
 name: Bump peek cask
 
-# Triggered either by a repository_dispatch event from the peek release
-# workflow (fastest path — fires within seconds of a new release) or
-# manually with a version + sha256 for backfills / retries.
+# Three triggers:
+#   1. repository_dispatch (peek-released)  — fastest; fired by peek's
+#      release workflow seconds after a tag is published. Requires a PAT
+#      on the peek side (HOMEBREW_TAP_TOKEN) with write access here.
+#   2. schedule (every 6 hours)              — fallback; polls GitHub
+#      releases and bumps if peek has moved ahead of the pinned version.
+#   3. workflow_dispatch                     — manual backfill / retry.
 
 on:
   repository_dispatch:
     types: [peek-released]
+  schedule:
+    - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
       version:
-        description: "peek version (without the leading v), e.g. 0.4.0"
-        required: true
+        description: "peek version without the leading v, e.g. 0.4.0 (leave blank to auto-detect)"
+        required: false
       sha256:
-        description: "SHA256 of peek-v<version>.zip"
-        required: true
+        description: "SHA256 of peek-v<version>.zip (leave blank to auto-detect)"
+        required: false
 
 permissions:
   contents: write
@@ -28,24 +34,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve version and sha256
+      - name: Resolve version + sha256
         id: resolve
         env:
+          GH_TOKEN: ${{ github.token }}
           DISPATCH_VERSION: ${{ github.event.client_payload.version }}
           DISPATCH_SHA256: ${{ github.event.client_payload.sha256 }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
           INPUT_SHA256: ${{ github.event.inputs.sha256 }}
         run: |
           set -euo pipefail
-          VERSION="${DISPATCH_VERSION:-$INPUT_VERSION}"
-          SHA256="${DISPATCH_SHA256:-$INPUT_SHA256}"
+          VERSION="${DISPATCH_VERSION:-${INPUT_VERSION:-}}"
+          SHA256="${DISPATCH_SHA256:-${INPUT_SHA256:-}}"
+
+          if [ -z "$VERSION" ] || [ -z "$SHA256" ]; then
+            echo "No explicit inputs; querying latest release of rsdrahat/peek..."
+            TAG=$(gh release view --repo rsdrahat/peek --json tagName --jq .tagName)
+            VERSION="${VERSION:-${TAG#v}}"
+            if [ -z "$SHA256" ]; then
+              SHA_ASSET="peek-${TAG}.zip.sha256"
+              SHA_URL="https://github.com/rsdrahat/peek/releases/download/${TAG}/${SHA_ASSET}"
+              SHA256=$(curl -fsSL "$SHA_URL" | cut -d' ' -f1)
+            fi
+          fi
+
           VERSION="${VERSION#v}"
           if [ -z "$VERSION" ] || [ -z "$SHA256" ]; then
-            echo "::error::version and sha256 are both required"
+            echo "::error::could not resolve version or sha256"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "sha256=$SHA256"   >> "$GITHUB_OUTPUT"
+          echo "Target: peek $VERSION ($SHA256)"
 
       - name: Rewrite Casks/peek.rb
         env:
@@ -63,8 +83,7 @@ jobs:
           text = re.sub(r'sha256 "[^"]+"',   f'sha256 "{s}"',   text, count=1)
           p.write_text(text)
           PY
-          echo "--- diff ---"
-          git diff -- Casks/peek.rb
+          git diff -- Casks/peek.rb || true
 
       - name: Commit + push
         env:
@@ -72,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           if git diff --quiet -- Casks/peek.rb; then
-            echo "No change (cask already at $VERSION); exiting."
+            echo "Cask already at $VERSION; nothing to do."
             exit 0
           fi
           git config user.name  "github-actions[bot]"
