@@ -1,0 +1,82 @@
+name: Bump peek cask
+
+# Triggered either by a repository_dispatch event from the peek release
+# workflow (fastest path — fires within seconds of a new release) or
+# manually with a version + sha256 for backfills / retries.
+
+on:
+  repository_dispatch:
+    types: [peek-released]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "peek version (without the leading v), e.g. 0.4.0"
+        required: true
+      sha256:
+        description: "SHA256 of peek-v<version>.zip"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: Update Casks/peek.rb
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version and sha256
+        id: resolve
+        env:
+          DISPATCH_VERSION: ${{ github.event.client_payload.version }}
+          DISPATCH_SHA256: ${{ github.event.client_payload.sha256 }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_SHA256: ${{ github.event.inputs.sha256 }}
+        run: |
+          set -euo pipefail
+          VERSION="${DISPATCH_VERSION:-$INPUT_VERSION}"
+          SHA256="${DISPATCH_SHA256:-$INPUT_SHA256}"
+          VERSION="${VERSION#v}"
+          if [ -z "$VERSION" ] || [ -z "$SHA256" ]; then
+            echo "::error::version and sha256 are both required"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256"   >> "$GITHUB_OUTPUT"
+
+      - name: Rewrite Casks/peek.rb
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+          SHA256: ${{ steps.resolve.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, pathlib
+          v = os.environ["VERSION"]
+          s = os.environ["SHA256"]
+          p = pathlib.Path("Casks/peek.rb")
+          text = p.read_text()
+          text = re.sub(r'version "[^"]+"',  f'version "{v}"',  text, count=1)
+          text = re.sub(r'sha256 "[^"]+"',   f'sha256 "{s}"',   text, count=1)
+          p.write_text(text)
+          PY
+          echo "--- diff ---"
+          git diff -- Casks/peek.rb
+
+      - name: Commit + push
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Casks/peek.rb; then
+            echo "No change (cask already at $VERSION); exiting."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/peek.rb
+          git commit -m "cask: peek $VERSION"
+          git push origin main
