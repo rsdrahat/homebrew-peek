@@ -16,6 +16,7 @@ cask "peek" do
   depends_on arch: :arm64
 
   app "peek.app"
+  binary "#{appdir}/peek.app/Contents/MacOS/peek"
 
   zap trash: [
     "~/Library/Preferences/dev.peek.app.plist",
