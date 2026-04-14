@@ -2,8 +2,7 @@ cask "peek" do
   version "0.3.0"
   sha256 "a1b91be75d2d4a1fd1a9b8914edad172754463e1669bc6dcfd3f95d4df46ebd4"
 
-  url "https://github.com/rsdrahat/peek/releases/download/v#{version}/peek-v#{version}.zip",
-      verified: "github.com/rsdrahat/peek/"
+  url "https://github.com/rsdrahat/peek/releases/download/v#{version}/peek-v#{version}.zip"
   name "peek"
   desc "Light, native macOS markdown viewer"
   homepage "https://github.com/rsdrahat/peek"
