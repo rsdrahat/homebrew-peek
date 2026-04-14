@@ -1,6 +1,6 @@
 cask "peek" do
-  version "0.3.1"
-  sha256 "50c6b093160237a4e890d0c736ded8146336f27fc9bc65b6ab74aa7c00125e67"
+  version "0.3.2"
+  sha256 "86f6f78e2f13a79dfa4023925b688d82f9da59f814ed69bde46bc51e230698b8"
 
   url "https://github.com/rsdrahat/peek/releases/download/v#{version}/peek-v#{version}.zip"
   name "peek"
