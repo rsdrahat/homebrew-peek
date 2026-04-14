@@ -16,7 +16,9 @@ cask "peek" do
   depends_on arch: :arm64
 
   app "peek.app"
-  binary "#{appdir}/peek.app/Contents/MacOS/peek"
+  # Point at the shim (not the raw binary) so argv[0] resolves back to
+  # the .app via readlink and SwiftPM's Bundle.module can locate resources.
+  binary "#{appdir}/peek.app/Contents/MacOS/peek-cli", target: "peek"
 
   zap trash: [
     "~/Library/Preferences/dev.peek.app.plist",
