@@ -20,6 +20,16 @@ cask "peek" do
   # the .app via readlink and SwiftPM's Bundle.module can locate resources.
   binary "#{appdir}/peek.app/Contents/MacOS/peek-cli", target: "peek"
 
+  # Re-register the upgraded bundle with Launch Services. Without this,
+  # macOS can keep serving the pre-upgrade icon (blank square in the Dock)
+  # and routing file args based on the old Info.plist's CFBundleDocumentTypes
+  # until the user reboots or kills the Dock. `brew upgrade` swaps the .app
+  # in place but does not notify LS on its own.
+  postflight do
+    system "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister",
+           "-f", "#{appdir}/peek.app"
+  end
+
   zap trash: [
     "~/Library/Preferences/dev.peek.app.plist",
     "~/Library/Saved Application State/dev.peek.app.savedState",
